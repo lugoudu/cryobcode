@@ -13,6 +13,9 @@
   --pwa              输出 PWA 部署目录（index.html/sw.js/manifest/图标/setup.html）
   --out 路径         输出文件（默认模式）或目录（--pwa 模式，默认 deploy/）
   --grid RxC         冻存盒孔位规格，默认 6x8
+  --code-col 关键词  核对码来源列（默认「暂存空间」）
+  --code-regex 正则  编码提取规则（默认取来源列末尾编码段，不限开头字母；
+                     特殊值 full = 整列文本作为编码）
 
 示例：
   python3 build.py demo/demo.xlsx                      # 演示数据明文单文件
@@ -34,24 +37,61 @@ DEMO_XLSX = os.path.join(BASE, 'demo', 'demo.xlsx')
 
 
 # ---------------------------------------------------------------- 读取编码库
-# 条码 = 「暂存空间」末尾 E 开头编码（如 2026年示例组第1盒E7000001 → E7000001）
-# 行结构：[盒码E, 样本号, 冻存条码号, 暂存空间, 行索引, 列索引, 手工标记]
-def load_rows(xlsx_path):
+# 核对用条码默认 = 「暂存空间」末尾编码段（如 …第1盒E7000001 → E7000001）；
+# 开头字母不限（那只是某批次的巧合），可用 --code-col / --code-regex 自定义来源与规则。
+# 行结构：[核对码, 样本号, 冻存条码号, 暂存空间, 行索引, 列索引, 手工标记]
+DEFAULT_CODE_RE = r'([A-Za-z0-9][A-Za-z0-9\-]{1,})$'
+
+
+def load_rows(xlsx_path, code_col_kw='暂存空间', code_regex=None):
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
     ws = wb[wb.sheetnames[0]]
-    rows = []
-    for r in ws.iter_rows(min_row=2, values_only=True):
-        if r[3] is None and (len(r) < 5 or r[4] is None):
+    grid = list(ws.iter_rows(values_only=True))
+    header = next((i for i, r in enumerate(grid[:5]) if r and any(str(c or '').strip() for c in r)), 0)
+    cols = [str(c or '').strip() for c in (grid[header] if grid else [])]
+
+    def find_col(kws):
+        for j, name in enumerate(cols):
+            if any(k in name for k in kws):
+                return j
+        return -1
+
+    code_col = find_col([code_col_kw]) if code_col_kw else -1
+    if code_col < 0:   # 退回：任何名称含「条码」的列，整列取值
+        code_col = find_col(['条码'])
+        whole_col = True
+    else:
+        whole_col = (code_regex == 'full')
+    rx = None if whole_col else re.compile(code_regex or DEFAULT_CODE_RE)
+
+    s_col, t_col, b_col = find_col(['样本', '编号', 'yangben']), find_col(['条码号', '冻存条码']), find_col(['暂存', '空间', '位置'])
+    r_col, k_col = find_col(['行']), find_col(['列'])
+    t_col = t_col if t_col != code_col else -1
+
+    rows, skipped = [], 0
+    for r in grid[header + 1:]:
+        raw = r[code_col] if code_col < len(r) else None
+        if raw is None or not str(raw).strip():
             continue
-        box = str(r[4] or '').strip()
-        m = re.search(r'(E\d+)$', box)
-        if not m:
-            print('跳过无E码行:', box)
+        text = str(raw).strip()
+        if whole_col:
+            code = re.sub(r'\s+', '', text)
+        else:
+            m = rx.search(text)
+            code = m.group(1) if m else ''
+        if not code:
+            skipped += 1
             continue
-        rows.append([m.group(1), str(r[2] or '').strip(), str(r[3] or '').strip(), box,
-                     r[5] if r[5] is not None else '',
-                     r[6] if len(r) > 6 and r[6] is not None else '', ''])
-    print('读取', xlsx_path, '->', len(rows), '行，唯一盒码', len(set(x[0] for x in rows)), '个')
+        get = lambda j: (str(r[j]).strip() if j >= 0 and j < len(r) and r[j] is not None else '')
+        rows.append([code, get(s_col), get(t_col), get(b_col) if b_col != code_col else text,
+                     get(r_col), get(k_col), ''])
+    uniq = len(set(x[0] for x in rows))
+    print('读取', xlsx_path, '->', len(rows), '行，唯一码', uniq, '个（来源列:',
+          cols[code_col] if code_col >= 0 else '?', '| 规则:', '整列' if whole_col else (code_regex or '默认末尾编码段'), '）')
+    if rows:
+        print('  码样例:', [x[0] for x in rows[:5]])
+    if skipped:
+        print('  跳过未提取到编码的行:', skipped)
     return rows
 
 
@@ -176,6 +216,11 @@ def main():
     ap.add_argument('--pwa', action='store_true', help='输出 PWA 部署目录')
     ap.add_argument('--out', help='输出路径（文件或目录）')
     ap.add_argument('--grid', default='6x8', help='冻存盒孔位规格，如 6x8')
+    ap.add_argument('--code-col', default='暂存空间',
+                    help='核对码来源列的关键词（默认「暂存空间」；找不到时退回任何含「条码」的列）')
+    ap.add_argument('--code-regex', default=None,
+                    help='从来源列文本提取编码的正则（默认取末尾编码段，不限开头字母）；'
+                         '特殊值 full = 整列文本作为编码')
     args = ap.parse_args()
 
     if not os.path.exists(args.xlsx):
@@ -187,7 +232,7 @@ def main():
     if not (1 <= grid[0] <= 16 and 1 <= grid[1] <= 16):
         sys.exit('--grid 行列须在 1–16 之间')
 
-    rows = load_rows(args.xlsx)
+    rows = load_rows(args.xlsx, args.code_col, args.code_regex)
     tpl, lib_js = load_template()
     name = args.name or re.sub(r'\.(xlsx|xls)$', '', os.path.basename(args.xlsx), flags=re.I)
 
