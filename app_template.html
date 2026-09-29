@@ -209,10 +209,10 @@ h2{font-size:17px;margin:2px 0 12px}
     <section id="v-manual" class="view">
       <h2>手动输入条码号</h2>
       <div class="row">
-        <input id="manualInput" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="输入编码，如 E7000001">
+        <input id="manualInput" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="输入编码（可省略首位字母，如 7000001）">
         <button id="btnManual" class="btn primary" style="flex:0 0 96px">查询</button>
       </div>
-      <div id="manualResult" class="resultcard empty">摄像头无法识别时可对照管身数字手动输入，查询结果同样计入记录</div>
+      <div id="manualResult" class="resultcard empty">摄像头无法识别时可对照管身数字手动输入，查询结果同样计入记录。支持省略首位字母的模糊查询：输入 7000001 可匹配 E7000001（过短的后缀不会误匹配）</div>
     </section>
 
     <!-- ======== 扫描记录 ======== -->
@@ -497,7 +497,7 @@ function showResult(el, entry) {
       '<div class="rc-badge"><svg class="ic"><use href="#i-check"/></svg> 在编码库内</div>' +
       '<div class="rc-code">' + esc(entry.c) + '</div>' +
       '<div class="rc-meta">' + body + '</div>' +
-      '<div class="rc-sub">' + t + (entry.dup ? ' · 重复扫描，记录已更新' : '') + '</div>';
+      '<div class="rc-sub">' + t + (entry.fuzzy ? ' · 已按省略首位字母匹配' : '') + (entry.dup ? ' · 重复扫描，记录已更新' : '') + '</div>';
   } else {
     el.className = 'resultcard bad';
     el.innerHTML =
@@ -949,10 +949,15 @@ function initScannerGun() {
     const tag = document.activeElement ? document.activeElement.tagName : '';
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;      // 输入框内交给各自逻辑
     if (e.key === 'Enter') {
-      if (gunBuf.length >= 3) commitGun(gunBuf);
+      if (gunBuf.length >= 3) {
+        commitGun(gunBuf);                                  // 字符流结尾的回车 = 扫码提交
+      } else {
+        closeBoxModal();                                    // 独立回车 = 关闭盒内弹窗（戴手套免触屏）
+      }
       gunBuf = ''; clearTimeout(gunTimer);
       return;
     }
+    if (e.key === 'Escape') { closeBoxModal(); return; }
     if (e.key && e.key.length === 1) {
       gunBuf += e.key;
       clearTimeout(gunTimer);
@@ -1103,23 +1108,36 @@ function doManual() {
   handleCodeRawForManual(v);
   inp.value = ''; inp.blur();
 }
-function handleCodeRaw(v, src) {
-  // 直判路径（手动输入/扫码枪）：绕过摄像头冷却，按来源记录
+function resolveCode(u) {
+  // 模糊查询：允许省略编码首位字母（如输入 012441 匹配 E012441）；
+  // 长度必须恰为编码长减一，杜绝 2441 这类短后缀误中；命中须唯一
+  if (lib.map.has(u)) return { code: u, fuzzy: false };
+  if (u.length >= 4) {
+    const hits = [...lib.map.keys()].filter(c => c.length === u.length + 1 && c.slice(1) === u);
+    if (hits.length === 1) return { code: hits[0], fuzzy: true };
+  }
+  return null;
+}
+function handleCodeRaw(vRaw, src) {
+  // 直判路径（手动输入/扫码枪）：绕过摄像头冷却，按来源记录；支持省略首位匹配
   const now = Date.now();
-  const rec = lib.map.get(v) || null;
-  const ok = !!rec;
+  const res = resolveCode(vRaw);
+  const v = res ? res.code : vRaw;
+  const rec = res ? lib.map.get(v) : null;
+  const ok = !!res;
   let entry = logIndex.get(v);
   const dup = !!entry;
   if (entry) { entry.ok = ok ? 1 : 0; entry.ts = now; entry.hits = (entry.hits || 1) + 1; entry.src = src; }
   else { entry = { c: v, ok: ok ? 1 : 0, ts: now, src, hits: 1 }; logArr.push(entry); logIndex.set(v, entry); }
   persistLog();
   feedback({ ok, dup });
+  const entryView = { c: v, ok, rec, dup, ts: now, fuzzy: !!(res && res.fuzzy) };
   if (src === 'manual') {
-    showResult($('manualResult'), { c: v, ok, rec, dup, ts: now });
+    showResult($('manualResult'), entryView);
     if (ok && rec) { switchView('v-manual'); showBoxModal(rec); }
   } else {
     switchView('v-scan');
-    showResult($('scanResult'), { c: v, ok, rec, dup, ts: now });
+    showResult($('scanResult'), entryView);
     if (ok && rec) showBoxModal(rec);
   }
   updateStats(); renderLog(); renderTodo();
