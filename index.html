@@ -416,21 +416,23 @@ function feedback(entry) {
 let lastHit = { c: '', t: 0 };
 function handleCode(raw, src) {
   const c = normCode(raw);
-  if (!c || !/^[0-9A-Za-z\-]+$/.test(c)) return;
+  if (!c || !/^[\x21-\x7E]{2,40}$/.test(c)) return;   // 可打印 ASCII（不含空格），2–40 位
   const now = Date.now();
   if (c === lastHit.c && now - lastHit.t < 2500) return;   // 同一条码冷却，防连刷
   lastHit = { c, t: now };
 
-  const rec = lib.map.get(c) || null;
-  const ok = !!rec;
-  let entry = logIndex.get(c);
+  const res = resolveCode(c);
+  const v = res ? res.code : c;
+  const rec = res ? lib.map.get(v) : null;
+  const ok = !!res;
+  let entry = logIndex.get(v);
   const dup = !!entry;
   if (entry) { entry.ok = ok ? 1 : 0; entry.ts = now; entry.hits = (entry.hits || 1) + 1; entry.src = src; }
-  else { entry = { c, ok: ok ? 1 : 0, ts: now, src, hits: 1 }; logArr.push(entry); logIndex.set(c, entry); }
+  else { entry = { c: v, ok: ok ? 1 : 0, ts: now, src, hits: 1 }; logArr.push(entry); logIndex.set(v, entry); }
   persistLog();
 
   feedback({ ok, dup });
-  showResult($('scanResult'), { c, ok, rec, dup, ts: now });
+  showResult($('scanResult'), { c: v, ok, rec, dup, ts: now, fuzzy: !!(res && res.fuzzy) });
   if (ok && rec) showBoxModal(rec);
   updateStats(); renderLog(); renderTodo();
 }
@@ -442,7 +444,7 @@ function showBoxModal(g) {
     ' · 盒内 ' + rows.length + ' 支样本';
   $('bmBox').textContent = '位置：' + (rows[0] && rows[0].b ? rows[0].b : '—');
   // 制式冻存盒：默认 6 行 × 8 列（48 孔），可由构建参数 --grid RxC 替换；占用孔位画圆点
-  const R = 6, C = 8; /*__GRID__*/
+  const R = 6, C = 8;
   const occ = new Map();
   rows.forEach(x => {
     if (+x.r >= 1 && +x.r <= R && +x.k >= 1 && +x.k <= C) occ.set((+x.r) + '-' + (+x.k), x);
@@ -574,16 +576,16 @@ async function startCam() {
   requestWakeLock(); probeTorch();
   enhanceCameraTrack();
 }
-// iPhone getUserMedia 默认只给 640x480 低清流，条码条纹不足 1px 难以解码；
-// 显式提到 1080p 并开连续对焦/曝光（设备不支持时 advanced 项会被自动忽略）
+// iPhone getUserMedia 默认只给 640x480 低清流，条码条纹不足 1px 难以解码。
+// 分两步：先提分辨率（关键），再试连续对焦/曝光——iOS 对不支持的 advanced 项会
+// 拒绝整次 applyConstraints，合并申请会连分辨率一起丢
 async function enhanceCameraTrack() {
   try {
-    await h5q.applyVideoConstraints({
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-      advanced: [{ focusMode: 'continuous' }, { exposureMode: 'continuous' }]
-    });
-  } catch (e) { console.warn('相机增强约束不适用，已忽略', e); }
+    await h5q.applyVideoConstraints({ width: { ideal: 1920 }, height: { ideal: 1080 } });
+  } catch (e) { console.warn('分辨率约束不适用', e); }
+  try {
+    await h5q.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' }, { exposureMode: 'continuous' }] });
+  } catch (e) { console.warn('对焦/曝光约束不适用，已忽略', e); }
 }
 async function stopCam() {
   if (!running) return;
@@ -620,10 +622,11 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* ================= 相册识别（多尺度 / 裁剪重试） ================= */
-// 注意：scanFile 失败后实例会进入坏状态，必须每次尝试用全新实例
+// 注意：scanFile 失败后实例会进入坏状态，必须每次尝试用全新实例；并清理隐藏容器的残留 DOM
 function tryScanBlob(blob) {
   return new Promise((resolve, reject) => {
     try {
+      $('fileReader').innerHTML = '';
       new Html5Qrcode('fileReader', { formatsToSupport: FORMATS, verbose: false })
         .scanFile(new File([blob], 'a.jpg', { type: blob.type || 'image/jpeg' }), false)
         .then(resolve).catch(reject);
@@ -717,6 +720,11 @@ function renderLog() {
     updateStats(); renderLog(); renderTodo();
   });
 }
+function rowPosText(x) {
+  return (x.r !== '' || x.k !== '')
+    ? '（' + (x.r !== '' ? '行 ' + esc(x.r) : '') + (x.r !== '' && x.k !== '' ? ' · ' : '') + (x.k !== '' ? '列 ' + esc(x.k) : '') + '）'
+    : '';
+}
 function renderTodo() {
   const box = $('todoList');
   const q = normCode($('todoSearch').value).toLowerCase();
@@ -729,14 +737,7 @@ function renderTodo() {
   if (!arr.length) { box.innerHTML = '<div class="empty-tip">' + (lib.count === 0 ? '编码库为空' : '<svg class="ic" style="color:#ffcf6b;width:15px;height:15px"><use href="#i-spark"/></svg> 全部找齐') + '</div>'; return; }
   box.innerHTML = arr.map(g => {
     const samples = g.rows.map(x => esc(x.s)).join('、');
-    let pos;
-    if (g.rows.length > 1) pos = '（共 ' + g.rows.length + ' 支）';
-    else {
-      const x = g.rows[0];
-      pos = (x.r !== '' || x.k !== '')
-        ? '（' + (x.r !== '' ? '行 ' + esc(x.r) : '') + (x.r !== '' && x.k !== '' ? ' · ' : '') + (x.k !== '' ? '列 ' + esc(x.k) : '') + '）'
-        : '';
-    }
+    const pos = g.rows.length > 1 ? '（共 ' + g.rows.length + ' 支）' : rowPosText(g.rows[0]);
     return '<div class="li"><span class="dot dim"></span>' +
       '<div class="body"><div class="code">' + esc(g.c) + '</div>' +
       '<div class="meta">' + samples + ' · ' + esc(g.rows[0].b || '') + pos +
@@ -759,14 +760,7 @@ function renderLibList() {
   if (!arr.length) { box.innerHTML = '<div class="empty-tip">' + (lib.count === 0 ? '编码库为空' : '无匹配编码') + '</div>'; return; }
   box.innerHTML = arr.map(g => {
     const samples = g.rows.map(x => esc(x.s)).filter(Boolean).join('、');
-    let pos;
-    if (g.rows.length > 1) pos = '（共 ' + g.rows.length + ' 支）';
-    else {
-      const x = g.rows[0];
-      pos = (x.r !== '' || x.k !== '')
-        ? '（' + (x.r !== '' ? '行 ' + esc(x.r) : '') + (x.r !== '' && x.k !== '' ? ' · ' : '') + (x.k !== '' ? '列 ' + esc(x.k) : '') + '）'
-        : '';
-    }
+    const pos = g.rows.length > 1 ? '（共 ' + g.rows.length + ' 支）' : rowPosText(g.rows[0]);
     const meta = (samples || esc(g.rows[0].b || '')) ? samples + (samples && g.rows[0].b ? ' · ' : '') + esc(g.rows[0].b || '') + pos
                                                     : (g.manual ? '手工添加 · 暂无样本/位置信息' : '—');
     return '<div class="li"><span class="dot ' + (g.manual ? 'acc' : 'dim') + '"></span>' +
@@ -779,10 +773,11 @@ function renderLibList() {
 }
 function addManualCode() {
   const inp = $('addInput');
-  const v = normCode(inp.value).toUpperCase();
+  const v = normCode(inp.value);
   if (!v) { toast('请输入编码'); return; }
-  if (!/^[A-Z0-9\-]{3,20}$/.test(v)) { toast('编码只能含字母、数字、连字符（3–20 位）'); return; }
-  if (lib.map.has(v)) { toast(v + ' 已在编码库中'); return; }
+  if (v.length < 2 || v.length > 40) { toast('编码长度应为 2–40 位'); return; }
+  const dupHit = resolveCode(v);
+  if (dupHit) { toast(dupHit.code + ' 已在编码库中'); return; }
   lib.map.set(v, { c: v, manual: true, rows: [{ s: '', t: '', b: '', r: '', k: '', m: '1' }] });
   lib.total++; lib.count++;
   persistLib(); updateLibHeader();
@@ -806,6 +801,7 @@ function delManualCode(c) {
 function downloadCsv(name, rows) {
   const csv = '\uFEFF' + rows.map(r => r.map(v => {
     v = String(v == null ? '' : v);
+    if (/^[=+\-@]/.test(v)) v = "'" + v;   // 防表格软件公式注入
     return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
   }).join(',')).join('\r\n');
   const a = document.createElement('a');
@@ -971,7 +967,7 @@ function initScannerGun() {
   }, true);
 }
 function commitGun(raw) {
-  const v = normCode(raw).toUpperCase();
+  const v = normCode(raw);
   if (!v) return;
   handleCodeRaw(v, 'gun');
 }
@@ -1126,12 +1122,17 @@ function doManual() {
   handleCodeRawForManual(v);
   inp.value = ''; inp.blur();
 }
-function resolveCode(u) {
-  // 模糊查询：允许省略编码首位字母（如输入 012441 匹配 E012441）；
-  // 长度必须恰为编码长减一，杜绝 2441 这类短后缀误中；命中须唯一
+function resolveCode(uRaw) {
+  // 查询解析：大小写不敏感；支持省略编码首位字母的模糊匹配（如输入 012441 匹配 E012441）；
+  // 模糊长度必须恰为编码长减一，杜绝 2441 这类短后缀误中；模糊命中须唯一
+  const u = normCode(uRaw);
+  if (!u) return null;
   if (lib.map.has(u)) return { code: u, fuzzy: false };
+  const uU = u.toUpperCase();
+  const ciHit = [...lib.map.keys()].find(c => c.toUpperCase() === uU);
+  if (ciHit) return { code: ciHit, fuzzy: false };
   if (u.length >= 4) {
-    const hits = [...lib.map.keys()].filter(c => c.length === u.length + 1 && c.slice(1) === u);
+    const hits = [...lib.map.keys()].filter(c => c.length === u.length + 1 && c.slice(1).toUpperCase() === uU);
     if (hits.length === 1) return { code: hits[0], fuzzy: true };
   }
   return null;
