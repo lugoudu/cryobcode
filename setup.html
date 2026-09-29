@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>iPhone 信任证书安装引导</title>
+<style>
+body{margin:0;background:#0f172a;color:#eef2fb;font-family:-apple-system,"PingFang SC","Noto Sans SC",sans-serif;-webkit-text-size-adjust:100%}
+.wrap{max-width:560px;margin:0 auto;padding:calc(20px + env(safe-area-inset-top)) 18px 40px}
+h1{font-size:21px;margin:8px 0 4px;display:flex;align-items:center;gap:9px}
+h1 svg{width:24px;height:24px;stroke:#4cc3ff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+.sub{font-size:13px;color:#9db0d0;margin:0 0 22px;line-height:1.7}
+.step{background:#1b2740;border:1px solid #33415c;border-radius:14px;padding:14px 16px;margin-bottom:12px}
+.step b{display:inline-block;width:24px;height:24px;border-radius:50%;background:#4cc3ff;color:#06263a;text-align:center;line-height:24px;font-size:14px;margin-right:8px}
+.step h2{font-size:15.5px;margin:0 0 6px;display:flex;align-items:center}
+.step p{font-size:13.5px;color:#c9d6ee;line-height:1.8;margin:0}
+.step p em{font-style:normal;color:#ffcf6b}
+.btn{display:block;text-align:center;min-height:50px;line-height:50px;border-radius:12px;background:#4cc3ff;color:#06263a;font-weight:700;font-size:16px;text-decoration:none;margin:18px 0 10px}
+.btn.ghost{background:#223052;color:#eef2fb;border:1px solid #33415c}
+.note{font-size:12px;color:#9db0d0;line-height:1.8;margin-top:14px}
+code{background:#0d1526;border:1px solid #33415c;border-radius:6px;padding:1px 7px;font-size:12.5px;color:#9db0d0;font-family:ui-monospace,Menlo,monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>iPhone 一次性配置引导</h1>
+  <p class="sub">本服务运行在自有服务器上（HTTPS 为自签证书，仅用于自家工具，安全可控）。完成以下三步（约 2 分钟），之后从主屏幕打开永不弹警告、断网也能扫码。</p>
+
+  <div class="step">
+    <h2><b>1</b>下载信任证书</h2>
+    <p>点下方按钮，Safari 提示"此网站正尝试下载一个描述文件"时点<em>允许</em>。</p>
+  </div>
+  <a class="btn" href="/ca.crt">下载信任证书</a>
+
+  <div class="step">
+    <h2><b>2</b>安装描述文件</h2>
+    <p>打开 <em>设置 → 通用 → VPN与设备管理</em>，点"已下载的描述文件"里的 <em>Caddy Local CA</em> → 右上角<em>安装</em>（输入锁屏密码）→ 再点<em>安装</em>确认。</p>
+  </div>
+
+  <div class="step">
+    <h2><b>3</b>开启完全信任</h2>
+    <p>打开 <em>设置 → 通用 → 关于本机 → 证书信任设置</em>，把 <em>Caddy Local CA</em> 的开关打开（变绿）。完成。</p>
+  </div>
+
+  <a class="btn ghost" href="/">打开冻存条码核对 →</a>
+  <p class="note">建议在工具页点 Safari 的<em>分享 → 添加到主屏幕</em>，之后从桌面图标一键进入。如浏览器仍提示证书警告，请确认第三步的开关已打开，或关闭 Safari 标签页后重新打开。</p>
+</div>
+</body>
+</html>

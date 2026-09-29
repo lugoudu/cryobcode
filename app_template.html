@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="冻存条码核对">
+<title>冻存条码核对</title>
+<!--__PWAHEAD__-->
+<style>
+:root{
+  --bg:#0f172a;--card:#1b2740;--card2:#223052;--line:#33415c;--tx:#eef2fb;--dim:#9db0d0;
+  --ok:#2ee06a;--okbg:#0c2f1a;--bad:#ff5b5b;--badbg:#3a1010;--acc:#4cc3ff;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--tx);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;
+  overscroll-behavior:none;-webkit-text-size-adjust:100%}
+button{font-family:inherit}
+#app{max-width:640px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+
+/* ---------- header ---------- */
+header{position:sticky;top:0;z-index:30;background:#0f172a;
+  padding:calc(12px + env(safe-area-inset-top)) 14px 12px;border-bottom:1px solid var(--line)}
+.h-title{font-size:20px;font-weight:700;letter-spacing:1px}
+.h-sub{font-size:12px;color:var(--dim);margin-top:2px}
+.chips{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.chip{font-size:13px;padding:4px 12px;border-radius:999px;background:var(--card);border:1px solid var(--line);white-space:nowrap}
+.chip.ok{color:var(--ok);border-color:rgba(46,224,106,.45);background:var(--okbg)}
+.chip.bad{color:var(--bad);border-color:rgba(255,91,91,.45);background:var(--badbg)}
+.chip.dim{color:var(--dim)}
+
+/* ---------- main / views ---------- */
+main{flex:1;padding:14px 14px calc(86px + env(safe-area-inset-bottom))}
+.view{display:none}
+.view.active{display:block}
+h2{font-size:17px;margin:2px 0 12px}
+.vhead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.vhead h2{margin:0}
+.hint{font-size:12.5px;color:var(--dim);line-height:1.7}
+.hint.warn{color:#ffcf6b}
+
+/* ---------- scanner ---------- */
+#readerWrap{position:relative;border-radius:14px;overflow:hidden;background:#000;border:1px solid var(--line)}
+#reader{width:100%}
+#reader video{width:100%;display:block}
+#scanTip{position:absolute;left:0;right:0;bottom:0;padding:8px 10px;text-align:center;font-size:12.5px;
+  color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.75));pointer-events:none}
+#camStatus{font-size:13px;color:var(--dim);min-height:20px;margin:10px 2px;line-height:1.6}
+#camStatus.err{color:var(--bad)}
+.btnrow{display:flex;gap:10px;margin:6px 0 14px}
+.btn{flex:1;min-height:48px;border:1px solid var(--line);border-radius:12px;background:var(--card);
+  color:var(--tx);font-size:15.5px;font-weight:600;padding:0 10px}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:#06263a}
+.btn.danger{color:var(--bad);border-color:rgba(255,91,91,.5)}
+.btn.sm{flex:0 0 auto;min-height:36px;font-size:13px;padding:0 12px;border-radius:9px}
+
+/* ---------- result card ---------- */
+.resultcard{border-radius:14px;padding:16px;margin-top:4px;background:var(--card);border:1px solid var(--line)}
+.resultcard.empty{color:var(--dim);font-size:13.5px;text-align:center;padding:22px 14px}
+.resultcard.ok{background:var(--okbg);border-color:rgba(46,224,106,.55)}
+.resultcard.bad{background:var(--badbg);border-color:rgba(255,91,91,.55)}
+.rc-badge{font-size:17px;font-weight:800;letter-spacing:1px}
+.resultcard.ok .rc-badge{color:var(--ok)}
+.resultcard.bad .rc-badge{color:var(--bad)}
+.rc-code{font:700 30px/1.25 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:1.5px;margin:6px 0 4px;word-break:break-all}
+.rc-meta{font-size:14.5px;line-height:1.75;color:var(--tx)}
+.rc-meta b{color:var(--acc);font-weight:600}
+.rc-sub{font-size:12px;color:var(--dim);margin-top:6px}
+
+/* ---------- manual ---------- */
+.row{display:flex;gap:10px}
+.row input{flex:1;min-height:48px;border-radius:12px;border:1px solid var(--line);background:var(--card);
+  color:var(--tx);font-size:17px;padding:0 14px;font-family:ui-monospace,Menlo,monospace;letter-spacing:1px}
+.row input:focus{outline:none;border-color:var(--acc)}
+#manualResult{margin-top:14px}
+
+/* ---------- lists ---------- */
+.search{width:100%;min-height:42px;border-radius:10px;border:1px solid var(--line);background:var(--card);
+  color:var(--tx);font-size:15px;padding:0 12px;margin-bottom:10px}
+.search:focus{outline:none;border-color:var(--acc)}
+.list{display:flex;flex-direction:column;gap:8px}
+.li{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);
+  border-radius:12px;padding:10px 12px}
+.li .dot{flex:0 0 10px;width:10px;height:10px;border-radius:50%}
+.li .dot.ok{background:var(--ok)}
+.li .dot.bad{background:var(--bad)}
+.li .dot.dim{background:var(--dim)}
+.li .dot.acc{background:var(--acc)}
+.tag{display:inline-block;font-size:10.5px;color:var(--acc);border:1px solid rgba(76,195,255,.45);
+  border-radius:5px;padding:0 5px;margin-left:6px;vertical-align:2px}
+.li .body{flex:1;min-width:0}
+.li .code{font:600 16px ui-monospace,Menlo,monospace;letter-spacing:.5px;word-break:break-all}
+.li .meta{font-size:12px;color:var(--dim);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.li .del{flex:0 0 auto;border:none;background:none;color:var(--dim);font-size:18px;padding:6px}
+.li .del:active{color:var(--bad)}
+.empty-tip{color:var(--dim);font-size:13.5px;text-align:center;padding:26px 0}
+
+/* ---------- data view ---------- */
+.libinfo{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+  font-size:14px;line-height:1.9;margin-bottom:14px}
+.libinfo b{color:var(--acc)}
+#btnImport{width:100%;margin-bottom:10px}
+#btnResetLib{width:100%;margin-top:10px}
+
+/* ---------- tabbar ---------- */
+#tabbar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;justify-content:center;gap:2px;
+  background:rgba(13,20,38,.97);backdrop-filter:blur(10px);border-top:1px solid var(--line);
+  padding:6px 6px calc(6px + env(safe-area-inset-bottom));max-width:640px;margin:0 auto}
+.tab{flex:1;border:none;background:none;color:var(--dim);font-size:11.5px;padding:5px 0 3px;border-radius:10px;line-height:1.35}
+.tabic{display:block;width:21px;height:21px;margin:0 auto 2px;stroke:currentColor;fill:none;
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ic{width:1em;height:1em;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.14em;flex:0 0 auto}
+.ic.lg{width:21px;height:21px;color:var(--acc)}
+.tab.active{color:var(--acc);background:rgba(76,195,255,.12)}
+
+/* ---------- flash & toast ---------- */
+#flash{position:fixed;inset:0;z-index:60;pointer-events:none;opacity:0;transition:opacity .18s}
+#flash.ok{background:rgba(46,224,106,.30)}
+#flash.bad{background:rgba(255,60,60,.36)}
+#flash.show{opacity:1}
+#toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(8px);
+  z-index:70;background:#0b1226;color:var(--tx);border:1px solid var(--line);
+  padding:10px 18px;border-radius:999px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;max-width:86vw;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ---------- 盒内样本弹窗 ---------- */
+#boxModal{position:fixed;inset:0;z-index:62;background:rgba(5,10,22,.72);display:flex;align-items:center;justify-content:center;padding:18px}
+.bm-card{width:min(400px,94vw);max-height:84vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 16px 14px}
+.bm-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px}
+.bm-title{font-size:16px;font-weight:800;color:var(--ok);letter-spacing:.5px;line-height:1.4}
+.bm-x{border:none;background:none;color:var(--dim);font-size:20px;padding:4px 6px}
+.bm-x:active{color:var(--bad)}
+.bm-box{font-size:13px;color:var(--dim);margin-bottom:12px;line-height:1.6}
+.bm-grid{display:grid;gap:3px;width:100%;margin:0 auto 12px}
+.bm-hc{display:flex;align-items:center;justify-content:center;font-size:9.5px;color:var(--dim);min-width:0}
+.bm-cell{aspect-ratio:1;min-width:0;border-radius:4px;background:#0d1526;border:1px solid #223052;
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+.bm-cell.on{background:rgba(46,224,106,.12);border-color:rgba(46,224,106,.5);cursor:pointer}
+.bm-cell.on::after{content:'';width:42%;aspect-ratio:1;border-radius:50%;background:var(--ok)}
+.bm-cell.on.hl,.bm-cell.hl{border-color:var(--acc);background:rgba(76,195,255,.22);box-shadow:0 0 0 2px rgba(76,195,255,.35)}
+.bm-cell.on.hl::after,.bm-cell.hl::after{background:var(--acc)}
+.bm-li{display:flex;align-items:center;gap:10px;padding:7px 10px;background:#0d1526;border:1px solid #223052;border-radius:9px;margin-bottom:6px;cursor:pointer}
+.bm-li.hl{border-color:rgba(76,195,255,.6);background:rgba(76,195,255,.1)}
+.bm-pos{flex:0 0 auto;font-size:11.5px;color:var(--acc);background:rgba(76,195,255,.1);border:1px solid rgba(76,195,255,.35);border-radius:6px;padding:2px 8px}
+.oob{color:#ff9b9b;font-style:normal}
+.bm-s{font:600 14px ui-monospace,Menlo,monospace;letter-spacing:.3px}
+.tube{font:500 12px ui-monospace,Menlo,monospace;color:var(--dim);letter-spacing:.3px;white-space:nowrap}
+
+/* ---------- 解锁遮罩 ---------- */
+#lockOverlay{position:fixed;inset:0;z-index:80;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
+.lockbox{width:min(330px,88vw);background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 22px;text-align:center}
+.lock-svg{width:34px;height:34px;color:var(--acc)}
+.lock-title{font-size:17px;font-weight:700;margin:10px 0 4px}
+.lock-sub{font-size:12.5px;color:var(--dim);margin-bottom:16px;line-height:1.6}
+#pwInput{width:100%;min-height:48px;border-radius:12px;border:1px solid var(--line);background:var(--bg);
+  color:var(--tx);font-size:17px;padding:0 14px;text-align:center;margin-bottom:12px}
+#pwInput:focus{outline:none;border-color:var(--acc)}
+#pwStatus{font-size:13px;color:var(--bad);min-height:18px;margin-top:10px}
+</style>
+</head>
+<body>
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-snow" viewBox="0 0 24 24"><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8"/><path d="M11 8v5"/><path d="M15 8v8"/><path d="M18 8v5"/></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M6 12h.01"/><path d="M10 12h.01"/><path d="M14 12h.01"/><path d="M18 12h.01"/><path d="M8 16h8"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M21.8 10A10 10 0 1 1 17 3.34"/><path d="m9 11 3 3L22 4"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></symbol>
+</svg>
+<div id="app">
+  <header>
+    <div class="h-title"><svg class="ic lg"><use href="#i-snow"/></svg> 冻存条码核对</div>
+    <div class="h-sub" id="libName">加载中…</div>
+    <div class="chips">
+      <span class="chip ok" id="chipIn">库内已扫 0/0</span>
+      <span class="chip bad" id="chipOut">库外 0</span>
+      <span class="chip dim" id="chipTodo">待找 0</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- ======== 扫码 ======== -->
+    <section id="v-scan" class="view active">
+      <div id="readerWrap">
+        <div id="reader"></div>
+        <div id="scanTip">条形码横置于框内 · 保持稳定约 1 秒 · 距离 10–15 cm</div>
+      </div>
+      <div id="camStatus"></div>
+      <div class="btnrow">
+        <button id="btnStart" class="btn primary">开启摄像头</button>
+        <button id="btnTorch" class="btn" style="display:none"><svg class="ic"><use href="#i-zap"/></svg> 手电</button>
+        <button id="btnAlbum" class="btn">相册识别</button>
+      </div>
+      <input type="file" id="albumInput" accept="image/*" hidden>
+      <p class="hint" style="margin:2px 2px 10px">已支持 USB / 蓝牙扫码枪：保持本页打开，对准条码<b>直接扫</b>即可，无需点击页面；键盘手动输入编码后按回车同样有效。</p>
+      <div id="scanResult" class="resultcard empty">开启摄像头后对准条形码，识别结果会显示在这里</div>
+    </section>
+
+    <!-- ======== 手动查询 ======== -->
+    <section id="v-manual" class="view">
+      <h2>手动输入条码号</h2>
+      <div class="row">
+        <input id="manualInput" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="输入编码，如 E7000001">
+        <button id="btnManual" class="btn primary" style="flex:0 0 96px">查询</button>
+      </div>
+      <div id="manualResult" class="resultcard empty">摄像头无法识别时可对照管身数字手动输入，查询结果同样计入记录</div>
+    </section>
+
+    <!-- ======== 扫描记录 ======== -->
+    <section id="v-log" class="view">
+      <div class="vhead">
+        <h2>扫描记录</h2>
+        <div style="display:flex;gap:8px">
+          <button id="btnExportLog" class="btn sm">导出 CSV</button>
+          <button id="btnClearLog" class="btn sm danger">清空</button>
+        </div>
+      </div>
+      <input id="logSearch" class="search" placeholder="搜索条码 / 样本号 / 盒位置">
+      <div id="logList" class="list"></div>
+    </section>
+
+    <!-- ======== 待找清单 ======== -->
+    <section id="v-todo" class="view">
+      <div class="vhead">
+        <h2>库内待找清单</h2>
+        <button id="btnExportTodo" class="btn sm">导出 CSV</button>
+      </div>
+      <input id="todoSearch" class="search" placeholder="搜索条码 / 样本号 / 盒位置">
+      <div id="todoList" class="list"></div>
+    </section>
+
+    <!-- ======== 编码库 ======== -->
+    <section id="v-data" class="view">
+      <h2>当前编码库</h2>
+      <div class="libinfo" id="libInfo"></div>
+
+      <div class="vhead"><h2>手工添加编码</h2></div>
+      <div class="row">
+        <input id="addInput" autocomplete="off" placeholder="输入编码，如 E7000001" style="text-transform:uppercase">
+        <button id="btnAddCode" class="btn primary" style="flex:0 0 96px">加入</button>
+      </div>
+      <p class="hint">手工添加的编码只存在本机（会随导入 Excel 或恢复默认而清除），可随时在下方的列表里删除；内置编码不受影响。</p>
+
+      <div class="vhead"><h2>全部编码<span id="libListCount" class="hint" style="font-weight:400"></span></h2></div>
+      <input id="libSearch" class="search" placeholder="搜索编码 / 样本号 / 盒位置">
+      <div id="libList" class="list"></div>
+
+      <div style="height:18px"></div>
+      <button id="btnImport" class="btn primary">上传新 Excel 更新编码库</button>
+      <input type="file" id="importInput" accept=".xlsx,.xls,.csv,.txt" hidden>
+      <p class="hint">支持与本表相同格式的 xlsx：自动取「暂存空间」末尾 E 开头编码作为条码（如 …第33盒E7000001 → E7000001），并带出样本号与行列；无该列时退回「冻存条码号」列。也支持 csv / txt（每行一个条码，或逗号、Tab 分列）。首次导入需联网下载解析组件；导入后编码库保存在本机，扫码功能始终离线可用。</p>
+      <button id="btnResetLib" class="btn">恢复默认编码库</button>
+      <p class="hint warn" id="httpsHint"></p>
+    </section>
+  </main>
+
+  <nav id="tabbar">
+    <button class="tab active" data-v="v-scan"><svg class="tabic"><use href="#i-scan"/></svg>扫码</button>
+    <button class="tab" data-v="v-manual"><svg class="tabic"><use href="#i-keyboard"/></svg>手查</button>
+    <button class="tab" data-v="v-log"><svg class="tabic"><use href="#i-clip"/></svg>记录</button>
+    <button class="tab" data-v="v-todo"><svg class="tabic"><use href="#i-search"/></svg>待找</button>
+    <button class="tab" data-v="v-data"><svg class="tabic"><use href="#i-db"/></svg>编码库</button>
+  </nav>
+
+  <div id="flash"></div>
+  <div id="boxModal" style="display:none">
+    <div class="bm-card">
+      <div class="bm-head">
+        <div class="bm-title" id="bmTitle"></div>
+        <button id="bmClose" class="bm-x">×</button>
+      </div>
+      <div class="bm-box" id="bmBox"></div>
+      <div id="bmGrid"></div>
+      <div id="bmList"></div>
+      <button id="bmOk" class="btn primary" style="width:100%;margin-top:6px">知道了</button>
+    </div>
+  </div>
+  <div id="lockOverlay" style="display:none">
+    <div class="lockbox">
+      <svg class="lock-svg"><use href="#i-lock"/></svg>
+      <div class="lock-title">编码库已加密</div>
+      <div class="lock-sub">本页面部署在公开网络，编码数据已加密保护<br>输入访问密码解锁，本机只需输入一次</div>
+      <input id="pwInput" type="password" placeholder="访问密码" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <button id="btnUnlock" class="btn primary" style="width:100%">解锁</button>
+      <div id="pwStatus"></div>
+    </div>
+  </div>
+  <div id="fileReader" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;overflow:hidden"></div>
+  <div id="toast"></div>
+</div>
+
+<script>/*__H5Q__*/</script>
+<script>
+'use strict';
+/* ================= 编码库数据（构建时注入） ================= */
+const DEFAULT_LIB = /*__DATA__*/;
+
+const LS_LIB = 'cb.lib.v4';
+const LS_LOG = 'cb.log.v4';
+const $ = id => document.getElementById(id);
+const normCode = x => String(x == null ? '' : x).replace(/\s+/g, '');
+
+/* ================= 状态 ================= */
+let lib = { name: '', count: 0, map: new Map() };
+let logArr = [];              // [{c, ok(1/0), ts, src, hits}] 每个条码仅一条
+let logIndex = new Map();     // code -> entry
+
+function applyLib(o, isDefault) {
+  lib.map.clear();
+  const rows = (o && o.rows) || [];
+  lib.total = 0;
+  for (const r of rows) {
+    const c = normCode(r[0]);
+    if (!c) continue;
+    lib.total++;
+    let g = lib.map.get(c);
+    if (!g) { g = { c, rows: [], manual: false }; lib.map.set(c, g); }
+    // 行结构：[盒码E, 样本号, 冻存条码号, 暂存空间, 行, 列, 手工标记]
+    g.rows.push({ s: r[1] == null ? '' : String(r[1]), t: r[2] == null ? '' : String(r[2]),
+                  b: r[3] == null ? '' : String(r[3]),
+                  r: r[4] == null ? '' : String(r[4]), k: r[5] == null ? '' : String(r[5]),
+                  m: r[6] ? '1' : '' });
+    if (r[6]) g.manual = true;
+  }
+  lib.name = String((o && o.name) || '未命名编码库');
+  lib.src = (o && o.src) || (isDefault ? 'default' : 'custom');
+  lib.count = lib.map.size;
+  let srcLabel;
+  if (lib.src === 'unlocked') srcLabel = '内置（密码解锁）';
+  else if (lib.src === 'edited') srcLabel = '内置 + 手工补充（' + esc((o && o.time) || '') + '）';
+  else if (isDefault) srcLabel = '内置默认';
+  else srcLabel = '本机导入（' + esc((o && o.time) || '') + '）';
+  $('libName').textContent = lib.name + ' · 共 ' + lib.count + ' 个条码' +
+    (lib.total !== lib.count ? '（' + lib.total + ' 支样本）' : '');
+  $('libInfo').innerHTML =
+    '编码库：<b>' + esc(lib.name) + '</b><br>条码数量：<b>' + lib.count + '</b> 个' +
+    (lib.total !== lib.count ? '（覆盖 <b>' + lib.total + '</b> 支样本，同码多支会全部列出）' : '') +
+    (lib.count === 0 ? '<br><span style="color:#ffcf6b">当前为空：请用下方「上传 Excel」导入你的名单，或手工添加编码</span>' : '') +
+    '<br>来源：' + srcLabel;
+  renderTodo(); renderLog(); renderLibList(); updateStats();
+}
+function updateLibHeader() {
+  $('libName').textContent = lib.name + ' · 共 ' + lib.count + ' 个条码' +
+    (lib.total !== lib.count ? '（' + lib.total + ' 支样本）' : '');
+}
+function persistLib() {
+  const rows = [];
+  for (const g of lib.map.values())
+    for (const x of g.rows) rows.push([g.c, x.s, x.t || '', x.b, x.r, x.k, x.m || '']);
+  const data = { name: lib.name, time: new Date().toLocaleString('zh-CN', { hour12: false }),
+                 src: lib.src === 'custom' ? 'custom' : 'edited', rows };
+  try { localStorage.setItem(LS_LIB, JSON.stringify(data)); } catch (e) {}
+}
+function loadLog() {
+  try { logArr = JSON.parse(localStorage.getItem(LS_LOG) || '[]'); } catch (e) { logArr = []; }
+  logIndex = new Map(logArr.map(e => [e.c, e]));
+}
+function persistLog() { try { localStorage.setItem(LS_LOG, JSON.stringify(logArr)); } catch (e) {} }
+
+function updateStats() {
+  let inC = 0, outC = 0;
+  for (const e of logArr) e.ok ? inC++ : outC++;
+  $('chipIn').textContent = '库内已扫 ' + inC + '/' + lib.count;
+  $('chipOut').textContent = '库外 ' + outC;
+  $('chipTodo').textContent = '待找 ' + (lib.count - inC);
+}
+
+/* ================= 声音 / 震动 / 闪屏 ================= */
+let AC = null;
+function ac() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (AC && AC.state === 'suspended') AC.resume();
+  return AC;
+}
+function tone(f, d, delay, vol) {
+  const a = ac(); if (!a) return;
+  const t0 = a.currentTime + (delay || 0);
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = 'sine'; o.frequency.value = f;
+  g.gain.setValueAtTime(vol || .3, t0);
+  g.gain.exponentialRampToValueAtTime(.001, t0 + d);
+  o.connect(g); g.connect(a.destination);
+  o.start(t0); o.stop(t0 + d + .05);
+}
+function feedback(entry) {
+  const fl = $('flash');
+  fl.className = entry.ok ? 'ok' : 'bad';
+  fl.classList.add('show');
+  setTimeout(() => fl.classList.remove('show'), 380);
+  if (entry.ok) { tone(880, .09); tone(1318, .12, .1); }
+  else { tone(196, .32, 0, .35); }
+  if (navigator.vibrate) {
+    try { navigator.vibrate(entry.ok ? (entry.dup ? [40] : [60]) : [160, 70, 160]); } catch (e) {}
+  }
+}
+
+/* ================= 核心识别处理 ================= */
+let lastHit = { c: '', t: 0 };
+function handleCode(raw, src) {
+  const c = normCode(raw);
+  if (!c || !/^[0-9A-Za-z\-]+$/.test(c)) return;
+  const now = Date.now();
+  if (c === lastHit.c && now - lastHit.t < 2500) return;   // 同一条码冷却，防连刷
+  lastHit = { c, t: now };
+
+  const rec = lib.map.get(c) || null;
+  const ok = !!rec;
+  let entry = logIndex.get(c);
+  const dup = !!entry;
+  if (entry) { entry.ok = ok ? 1 : 0; entry.ts = now; entry.hits = (entry.hits || 1) + 1; entry.src = src; }
+  else { entry = { c, ok: ok ? 1 : 0, ts: now, src, hits: 1 }; logArr.push(entry); logIndex.set(c, entry); }
+  persistLog();
+
+  feedback({ ok, dup });
+  showResult($('scanResult'), { c, ok, rec, dup, ts: now });
+  if (ok && rec) showBoxModal(rec);
+  updateStats(); renderLog(); renderTodo();
+}
+
+/* ================= 盒内样本弹窗 ================= */
+function showBoxModal(g) {
+  const rows = g.rows || [];
+  $('bmTitle').innerHTML = '<svg class="ic"><use href="#i-check"/></svg> ' + esc(g.c) +
+    ' · 盒内 ' + rows.length + ' 支样本';
+  $('bmBox').textContent = '位置：' + (rows[0] && rows[0].b ? rows[0].b : '—');
+  // 制式冻存盒：默认 6 行 × 8 列（48 孔），可由构建参数 --grid RxC 替换；占用孔位画圆点
+  const R = 6, C = 8; /*__GRID__*/
+  const occ = new Map();
+  rows.forEach(x => {
+    if (+x.r >= 1 && +x.r <= R && +x.k >= 1 && +x.k <= C) occ.set((+x.r) + '-' + (+x.k), x);
+  });
+  let gridHtml = '<div class="bm-grid" style="grid-template-columns:18px repeat(' + C + ',minmax(0,1fr))">';
+  gridHtml += '<div class="bm-hc"></div>';
+  for (let c = 1; c <= C; c++) gridHtml += '<div class="bm-hc">' + c + '</div>';
+  for (let r = 1; r <= R; r++) {
+    gridHtml += '<div class="bm-hc">' + r + '</div>';
+    for (let c = 1; c <= C; c++) {
+      const x = occ.get(r + '-' + c);
+      gridHtml += x ? '<div class="bm-cell on" data-key="' + r + '-' + c + '" title="' + esc(x.s || '') + '"></div>'
+                    : '<div class="bm-cell"></div>';
+    }
+  }
+  gridHtml += '</div>';
+  $('bmGrid').innerHTML = gridHtml;
+  $('bmList').innerHTML = rows.map(x => {
+    const inBox = (+x.r >= 1 && +x.r <= R && +x.k >= 1 && +x.k <= C);
+    const key = inBox ? (+x.r) + '-' + (+x.k) : '';
+    return '<div class="bm-li"' + (key ? ' data-key="' + key + '"' : '') + '>' +
+      '<span class="bm-pos">行 ' + esc(x.r || '·') + ' · 列 ' + esc(x.k || '·') +
+      (inBox ? '' : '<em class="oob"> 超位</em>') + '</span>' +
+      '<span class="bm-s">' + esc(x.s || '—') + (x.t ? '<span class="tube"> / ' + esc(x.t) + '</span>' : '') + '</span></div>';
+  }).join('');
+  $('boxModal').style.display = 'flex';
+}
+function flashPos(key) {
+  document.querySelectorAll('#bmGrid .hl, #bmList .hl').forEach(el => el.classList.remove('hl'));
+  const els = document.querySelectorAll('#bmGrid [data-key="' + key + '"], #bmList [data-key="' + key + '"]');
+  els.forEach(el => el.classList.add('hl'));
+  setTimeout(() => els.forEach(el => el.classList.remove('hl')), 1800);
+}
+function closeBoxModal() { $('boxModal').style.display = 'none'; }
+
+function showResult(el, entry) {
+  const t = fmtTime(entry.ts);
+  if (entry.ok && entry.rec) {
+    const g = entry.rec;                    // { c, rows: [{s,b,r,k}, ...] }
+    const posText = x => (x.r !== '' || x.k !== '')
+      ? '（' + (x.r !== '' ? '第 ' + esc(x.r) + ' 行' : '') + (x.r !== '' && x.k !== '' ? ' · ' : '') +
+        (x.k !== '' ? '第 ' + esc(x.k) + ' 列' : '') + '）' : '';
+    let body;
+    if (g.rows.length > 1) {
+      body = '位置：<b>' + esc(g.rows[0].b || '—') + '</b> · 共 <b>' + g.rows.length + '</b> 支样本<br>' +
+        g.rows.map(x => '样本号 <b>' + esc(x.s || '—') + '</b>' + (x.t ? '<span class="tube"> / ' + esc(x.t) + '</span>' : '') + posText(x)).join('<br>');
+    } else {
+      const r = g.rows[0];
+      body = '样本号：<b>' + esc(r.s || '—') + '</b>' + (r.t ? '<span class="tube"> / ' + esc(r.t) + '</span>' : '') + '<br>' +
+        '位置：<b>' + esc(r.b || '—') + '</b>' + posText(r);
+    }
+    el.className = 'resultcard ok';
+    el.innerHTML =
+      '<div class="rc-badge"><svg class="ic"><use href="#i-check"/></svg> 在编码库内</div>' +
+      '<div class="rc-code">' + esc(entry.c) + '</div>' +
+      '<div class="rc-meta">' + body + '</div>' +
+      '<div class="rc-sub">' + t + (entry.dup ? ' · 重复扫描，记录已更新' : '') + '</div>';
+  } else {
+    el.className = 'resultcard bad';
+    el.innerHTML =
+      '<div class="rc-badge"><svg class="ic"><use href="#i-x"/></svg> 不在编码库内</div>' +
+      '<div class="rc-code">' + esc(entry.c) + '</div>' +
+      '<div class="rc-meta">当前编码库（' + esc(lib.name) + '）中没有此条码</div>' +
+      '<div class="rc-sub">' + t + ' · 请核对标签或确认编码库版本</div>';
+  }
+}
+
+/* ================= 摄像头扫码 ================= */
+const FORMATS = [
+  Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39,
+  Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+  Html5QrcodeSupportedFormats.ITF, Html5QrcodeSupportedFormats.CODABAR,
+  Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E
+];
+let h5q = null, running = false, torchOn = false, wakeLock = null;
+
+function setCamStatus(msg, isErr) {
+  const el = $('camStatus');
+  el.textContent = msg || '';
+  el.className = isErr ? 'err' : '';
+}
+function failMsg(err) {
+  const m = (err && err.message) ? err.message : String(err == null ? '' : err);
+  if (!window.isSecureContext) {
+    return '无法访问摄像头：当前页面不是 HTTPS。请改用 https:// 地址打开本页面（电脑端运行 serve_https.py 后，手机浏览器访问提示的地址，首次打开需在警告页选择继续访问）。也可暂时使用相册识别或手动输入。';
+  }
+  if (/MicroMessenger/i.test(navigator.userAgent || '')) {
+    return '微信内置浏览器无法调用相机：请点右上角「…」→「在浏览器打开」（iOS 选 Safari），或复制本页链接到 Safari / Chrome 打开后再试。';
+  }
+  if (/NotAllowed|permission|Permission/i.test(m)) return '无法访问摄像头：相机权限被拒绝。请在手机设置中允许本页面（Safari/Chrome）使用相机，或浏览器地址栏锁形图标里开启相机后重试。';
+  return '无法访问摄像头：' + m + '。可改用相册识别或手动输入。';
+}
+async function startCam() {
+  if (running) { stopCam(); return; }
+  ac();                                  // 借用户手势解锁音频
+  setCamStatus('正在启动摄像头…');
+  const cfg = {
+    fps: 10,
+    qrbox: (w, h) => ({ width: Math.floor(w * .88), height: Math.floor(h * .27) })
+  };
+  const onScan = t => { try { handleCode(t, 'cam'); } catch (e) { console.error(e); } };
+  // 注意：start 的第一个参数传对象时只允许一个键；失败后实例状态机会锁死，必须换新实例重试
+  const tryStart = async (cameraIdOrConfig) => {
+    $('reader').innerHTML = '';
+    const inst = new Html5Qrcode('reader', {
+      formatsToSupport: FORMATS,
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      verbose: false
+    });
+    await inst.start(cameraIdOrConfig, cfg, onScan, () => {});
+    return inst;
+  };
+  try {
+    h5q = await tryStart({ facingMode: 'environment' });
+  } catch (e1) {
+    console.warn('facingMode 启动失败', e1);
+    try {
+      const cams = await Html5Qrcode.getCameras();
+      if (!cams || !cams.length) throw e1;
+      h5q = await tryStart(cams[cams.length - 1].id);
+    } catch (e2) {
+      console.error(e2);
+      setCamStatus(failMsg(e2), true);
+      return;
+    }
+  }
+  running = true; torchOn = false;
+  updateStartBtn(); setCamStatus('');
+  requestWakeLock(); probeTorch();
+  enhanceCameraTrack();
+}
+// iPhone getUserMedia 默认只给 640x480 低清流，条码条纹不足 1px 难以解码；
+// 显式提到 1080p 并开连续对焦/曝光（设备不支持时 advanced 项会被自动忽略）
+async function enhanceCameraTrack() {
+  try {
+    await h5q.applyVideoConstraints({
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      advanced: [{ focusMode: 'continuous' }, { exposureMode: 'continuous' }]
+    });
+  } catch (e) { console.warn('相机增强约束不适用，已忽略', e); }
+}
+async function stopCam() {
+  if (!running) return;
+  try { await h5q.stop(); h5q.clear(); } catch (e) {}
+  $('reader').innerHTML = '';
+  running = false; torchOn = false;
+  updateStartBtn(); updateTorchBtn();
+  releaseWakeLock();
+  setCamStatus('摄像头已关闭');
+}
+function updateStartBtn() { $('btnStart').textContent = running ? '停止摄像头' : '开启摄像头'; }
+function updateTorchBtn() {
+  $('btnTorch').innerHTML = '<svg class="ic"><use href="#i-zap"/></svg> ' + (torchOn ? '关灯' : '手电');
+}
+
+async function probeTorch() {
+  let cap = null;
+  try { cap = h5q.getRunningTrackCapabilities(); } catch (e) {}
+  $('btnTorch').style.display = (cap && ('torch' in cap)) ? '' : 'none';
+}
+async function toggleTorch() {
+  try {
+    await h5q.applyVideoConstraints({ advanced: [{ torch: !torchOn }] });
+    torchOn = !torchOn; updateTorchBtn();
+  } catch (e) { toast('此设备不支持手电筒控制'); }
+}
+
+async function requestWakeLock() {
+  try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { wakeLock = null; }
+}
+function releaseWakeLock() { try { wakeLock && wakeLock.release(); } catch (e) {} wakeLock = null; }
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && running) requestWakeLock();
+});
+
+/* ================= 相册识别（多尺度 / 裁剪重试） ================= */
+// 注意：scanFile 失败后实例会进入坏状态，必须每次尝试用全新实例
+function tryScanBlob(blob) {
+  return new Promise((resolve, reject) => {
+    try {
+      new Html5Qrcode('fileReader', { formatsToSupport: FORMATS, verbose: false })
+        .scanFile(new File([blob], 'a.jpg', { type: blob.type || 'image/jpeg' }), false)
+        .then(resolve).catch(reject);
+    } catch (e) { reject(e); }
+  });
+}
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片解码失败（格式不受支持，如 HEIC）')); };
+    img.src = url;
+  });
+}
+async function transformImage(file, opts) {
+  const img = await loadImage(file);
+  try {
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    let sx = 0, sy = 0, sw = iw, sh = ih, dw = iw, dh = ih;
+    if (opts.cropFrac) {            // 只取中央区域（手机拍条码时主体多在中央）
+      sw = iw * opts.cropFrac; sh = ih * opts.cropFrac;
+      sx = (iw - sw) / 2; sy = (ih - sh) / 2; dw = sw; dh = sh;
+    }
+    if (opts.width && sw > opts.width) {
+      dw = opts.width; dh = Math.round(sh * (opts.width / sw));
+    }
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(dw)); cv.height = Math.max(1, Math.round(dh));
+    const cx = cv.getContext('2d');
+    cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
+    cx.drawImage(img, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+    return new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
+  } finally { URL.revokeObjectURL(img.src); }
+}
+async function scanImageFile(file) {
+  if (!file) return;
+  toast('正在识别图片…');
+  const attempts = [{}, { width: 1400 }, { width: 900 }, { cropFrac: 0.62 },
+                    { cropFrac: 0.62, width: 1200 }, { width: 2000 }];
+  let decodeErr = null;
+  for (const a of attempts) {
+    try {
+      let blob = file;
+      if (Object.keys(a).length) blob = await transformImage(file, a);
+      const text = await tryScanBlob(blob);
+      handleCode(text, 'img');
+      switchView('v-scan');
+      return;
+    } catch (e) {
+      if (!Object.keys(a).length) decodeErr = e;
+      console.warn('相册识别尝试失败', a, e);
+    }
+  }
+  const badFormat = decodeErr && /解码失败|HEIC/.test(decodeErr.message || '');
+  toast(badFormat ? '照片格式无法解析（可能是 HEIC 原图）：请截图后重新选择，或改用手动输入'
+                  : '未能从图片中识别出条码：请正对条码、避免反光后重拍，或改用手动输入');
+}
+
+/* ================= 列表渲染 ================= */
+function fmtTime(ts) {
+  const d = new Date(ts), p = n => String(n).padStart(2, '0');
+  return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+function renderLog() {
+  const box = $('logList');
+  const q = normCode($('logSearch').value).toLowerCase();
+  const arr = [...logArr].sort((a, b) => b.ts - a.ts).filter(e => {
+    if (!q) return true;
+    const g = lib.map.get(e.c);
+    return e.c.toLowerCase().includes(q) ||
+      (g && g.rows.map(x => x.s + ' ' + x.b).join(' ').toLowerCase().includes(q));
+  });
+  if (!arr.length) { box.innerHTML = '<div class="empty-tip">暂无扫描记录</div>'; return; }
+  box.innerHTML = arr.map(e => {
+    const g = lib.map.get(e.c);
+    const meta = g
+      ? (esc(g.rows.map(x => x.s).join('、')) + ' · ' + esc(g.rows[0].b || '') + (g.rows.length > 1 ? '（' + g.rows.length + ' 支）' : ''))
+      : '不在编码库内';
+    return '<div class="li"><span class="dot ' + (e.ok ? 'ok' : 'bad') + '"></span>' +
+      '<div class="body"><div class="code">' + esc(e.c) + '</div>' +
+      '<div class="meta">' + meta + ' · ' + fmtTime(e.ts) + '</div></div>' +
+      '<button class="del" data-c="' + esc(e.c) + '" title="删除该条">×</button></div>';
+  }).join('');
+  box.querySelectorAll('.del').forEach(b => b.onclick = () => {
+    const c = b.getAttribute('data-c');
+    const i = logArr.findIndex(e => e.c === c);
+    if (i >= 0) { logArr.splice(i, 1); logIndex.delete(c); persistLog(); }
+    updateStats(); renderLog(); renderTodo();
+  });
+}
+function renderTodo() {
+  const box = $('todoList');
+  const q = normCode($('todoSearch').value).toLowerCase();
+  const found = new Set(logArr.filter(e => e.ok).map(e => e.c));
+  const arr = [...lib.map.values()].filter(g => !found.has(g.c)).filter(g => {
+    if (!q) return true;
+    return g.c.toLowerCase().includes(q) ||
+      g.rows.map(x => x.s + ' ' + x.b).join(' ').toLowerCase().includes(q);
+  });
+  if (!arr.length) { box.innerHTML = '<div class="empty-tip">' + (lib.count === 0 ? '编码库为空' : '<svg class="ic" style="color:#ffcf6b;width:15px;height:15px"><use href="#i-spark"/></svg> 全部找齐') + '</div>'; return; }
+  box.innerHTML = arr.map(g => {
+    const samples = g.rows.map(x => esc(x.s)).join('、');
+    let pos;
+    if (g.rows.length > 1) pos = '（共 ' + g.rows.length + ' 支）';
+    else {
+      const x = g.rows[0];
+      pos = (x.r !== '' || x.k !== '')
+        ? '（' + (x.r !== '' ? '行 ' + esc(x.r) : '') + (x.r !== '' && x.k !== '' ? ' · ' : '') + (x.k !== '' ? '列 ' + esc(x.k) : '') + '）'
+        : '';
+    }
+    return '<div class="li"><span class="dot dim"></span>' +
+      '<div class="body"><div class="code">' + esc(g.c) + '</div>' +
+      '<div class="meta">' + samples + ' · ' + esc(g.rows[0].b || '') + pos +
+      '</div></div></div>';
+  }).join('');
+}
+
+/* ================= 编码库浏览 / 手工添加 ================= */
+function renderLibList() {
+  const box = $('libList');
+  if (!box) return;
+  $('libListCount').textContent = '（' + lib.count + ' 个条码' +
+    (lib.total !== lib.count ? ' · ' + lib.total + ' 支样本' : '') + '）';
+  const q = normCode($('libSearch').value).toLowerCase();
+  const arr = [...lib.map.values()].filter(g => {
+    if (!q) return true;
+    return g.c.toLowerCase().includes(q) ||
+      g.rows.map(x => x.s + ' ' + x.b).join(' ').toLowerCase().includes(q);
+  });
+  if (!arr.length) { box.innerHTML = '<div class="empty-tip">' + (lib.count === 0 ? '编码库为空' : '无匹配编码') + '</div>'; return; }
+  box.innerHTML = arr.map(g => {
+    const samples = g.rows.map(x => esc(x.s)).filter(Boolean).join('、');
+    let pos;
+    if (g.rows.length > 1) pos = '（共 ' + g.rows.length + ' 支）';
+    else {
+      const x = g.rows[0];
+      pos = (x.r !== '' || x.k !== '')
+        ? '（' + (x.r !== '' ? '行 ' + esc(x.r) : '') + (x.r !== '' && x.k !== '' ? ' · ' : '') + (x.k !== '' ? '列 ' + esc(x.k) : '') + '）'
+        : '';
+    }
+    const meta = (samples || esc(g.rows[0].b || '')) ? samples + (samples && g.rows[0].b ? ' · ' : '') + esc(g.rows[0].b || '') + pos
+                                                    : (g.manual ? '手工添加 · 暂无样本/位置信息' : '—');
+    return '<div class="li"><span class="dot ' + (g.manual ? 'acc' : 'dim') + '"></span>' +
+      '<div class="body"><div class="code">' + esc(g.c) + (g.manual ? '<span class="tag">手工</span>' : '') + '</div>' +
+      '<div class="meta">' + meta + '</div></div>' +
+      (g.manual ? '<button class="del" data-c="' + esc(g.c) + '" title="删除">×</button>' : '') +
+      '</div>';
+  }).join('');
+  box.querySelectorAll('.del').forEach(b => b.onclick = () => delManualCode(b.getAttribute('data-c')));
+}
+function addManualCode() {
+  const inp = $('addInput');
+  const v = normCode(inp.value).toUpperCase();
+  if (!v) { toast('请输入编码'); return; }
+  if (!/^[A-Z0-9\-]{3,20}$/.test(v)) { toast('编码只能含字母、数字、连字符（3–20 位）'); return; }
+  if (lib.map.has(v)) { toast(v + ' 已在编码库中'); return; }
+  lib.map.set(v, { c: v, manual: true, rows: [{ s: '', t: '', b: '', r: '', k: '', m: '1' }] });
+  lib.total++; lib.count++;
+  persistLib(); updateLibHeader();
+  inp.value = ''; inp.blur();
+  renderLibList(); renderTodo(); renderLog(); updateStats();
+  toast('已加入 ' + v);
+  if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
+}
+function delManualCode(c) {
+  const g = lib.map.get(c);
+  if (!g || !g.manual) return;
+  if (!confirm('从本机编码库删除 ' + c + ' ？（不影响内置库，可随时重新添加）')) return;
+  lib.map.delete(c);
+  lib.total -= g.rows.length; lib.count--;
+  persistLib(); updateLibHeader();
+  renderLibList(); renderTodo(); renderLog(); updateStats();
+  toast('已删除 ' + c);
+}
+
+/* ================= CSV 导出 ================= */
+function downloadCsv(name, rows) {
+  const csv = '\uFEFF' + rows.map(r => r.map(v => {
+    v = String(v == null ? '' : v);
+    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function stamp() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes());
+}
+function exportLog() {
+  if (!logArr.length) { toast('暂无记录可导出'); return; }
+  const rows = [['盒码', '判定', '样本号', '冻存条码号', '暂存空间', '行', '列', '时间', '来源', '扫描次数']];
+  [...logArr].sort((a, b) => b.ts - a.ts).forEach(e => {
+    const g = lib.map.get(e.c);
+    rows.push([e.c, e.ok ? '在库内' : '不在库内',
+      g ? g.rows.map(x => x.s).join('、') : '', g ? g.rows.map(x => x.t).join('、') : '', g ? g.rows[0].b : '',
+      g ? g.rows.map(x => x.r).join('、') : '', g ? g.rows.map(x => x.k).join('、') : '',
+      new Date(e.ts).toLocaleString('zh-CN', { hour12: false }), { cam: '摄像头', img: '相册', manual: '手动', gun: '扫码枪' }[e.src] || e.src, e.hits || 1]);
+  });
+  downloadCsv('扫描记录_' + stamp() + '.csv', rows);
+}
+function exportTodo() {
+  const found = new Set(logArr.filter(e => e.ok).map(e => e.c));
+  const arr = [...lib.map.values()].filter(r => !found.has(r.c));
+  if (!arr.length) { toast('没有待找条码，全部找齐'); return; }
+  const rows = [['盒码', '样本号', '冻存条码号', '暂存空间', '行', '列', '支数']];
+  arr.forEach(g => rows.push([g.c, g.rows.map(x => x.s).join('、'), g.rows.map(x => x.t).join('、'),
+    g.rows[0].b, g.rows.map(x => x.r).join('、'), g.rows.map(x => x.k).join('、'), g.rows.length]));
+  downloadCsv('待找清单_' + stamp() + '.csv', rows);
+}
+
+/* ================= 编码库导入 ================= */
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res;
+    s.onerror = () => rej(new Error('加载失败 ' + src));
+    document.head.appendChild(s);
+  });
+}
+async function ensureXLSX() {
+  if (window.XLSX) return;
+  const urls = [
+    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'
+  ];
+  for (const u of urls) { try { await loadScript(u); if (window.XLSX) return; } catch (e) {} }
+  throw new Error('解析组件下载失败：导入 xlsx 需联网一次；也可改用每行一个条码的 csv / txt 文件离线导入');
+}
+async function importFile(file) {
+  if (!file) return;
+  toast('正在解析 ' + file.name + ' …');
+  try {
+    let rows;
+    if (/\.(xlsx|xls)$/i.test(file.name)) {
+      await ensureXLSX();
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+    } else {
+      const txt = await file.text();
+      rows = txt.split(/\r?\n/).filter(x => x.trim()).map(l => l.split(/[,;\t]/));
+    }
+    const recs = parseRows(rows);
+    if (!recs.length) throw new Error('未找到有效的条码数据');
+    const uniq = new Set(recs.map(r => normCode(r[0]))).size;
+    if (!confirm('文件：' + file.name + '\n识别到 ' + recs.length + ' 行数据，唯一条码 ' + uniq + ' 条。\n确定用其替换当前编码库吗？（扫描记录会保留）')) return;
+    const name = file.name.replace(/\.(xlsx|xls|csv|txt)$/i, '');
+    const data = { name, time: new Date().toLocaleString('zh-CN', { hour12: false }), rows: recs };
+    localStorage.setItem(LS_LIB, JSON.stringify(data));
+    applyLib(data, false);
+    toast('编码库已更新：' + uniq + ' 条');
+  } catch (e) {
+    console.error(e);
+    alert('导入失败：' + (e.message || e));
+  }
+}
+function parseRows(rows) {
+  // 在前 12 行里找包含“条码”的表头行，确定条码列及附属列
+  let hIdx = -1, cCol = -1, sCol = -1, bCol = -1, rCol = -1, kCol = -1;
+  for (let i = 0; i < Math.min(12, rows.length); i++) {
+    const row = rows[i] || [];
+    for (let j = 0; j < row.length; j++) {
+      const t = String(row[j] == null ? '' : row[j]).trim();
+      if (!t) continue;
+      if (cCol < 0 && /条码/.test(t)) { hIdx = i; cCol = j; }
+      else if (/样本|编号|yangben/i.test(t) && sCol < 0) sCol = j;
+      else if (/暂存|空间|盒|位置/.test(t) && bCol < 0) bCol = j;
+      else if (/^行(索引)?$/.test(t) && rCol < 0) rCol = j;
+      else if (/^列(索引)?$/.test(t) && kCol < 0) kCol = j;
+    }
+    if (cCol >= 0) break;
+  }
+  const recs = [];
+  if (hIdx >= 0) {
+    for (let i = hIdx + 1; i < rows.length; i++) {
+      const row = rows[i] || [];
+      let c = '';
+      if (bCol >= 0) {                          // 优先：暂存空间末尾 E 开头编码
+        const mm = String(row[bCol] == null ? '' : row[bCol]).trim().match(/(E\d+)$/);
+        if (mm) c = mm[1];
+      }
+      let t = '';
+      if (cCol >= 0) {                          // 「冻存条码号」列：管条码，兼作主码退路
+        const tv = normCode(row[cCol]);
+        if (/^\d{5,}$/.test(tv)) { t = tv; if (!c) c = tv; }
+      }
+      if (!c) continue;
+      recs.push([c, sCol >= 0 ? row[sCol] : '', t, bCol >= 0 ? row[bCol] : '',
+                 rCol >= 0 ? row[rCol] : '', kCol >= 0 ? row[kCol] : '', '']);
+    }
+  } else {
+    // 无表头：取每行里第一个 E 开头编码或 6 位以上纯数字串当条码
+    for (const row of rows) {
+      for (const cell of (row || [])) {
+        const m = String(cell == null ? '' : cell).match(/E\d{4,}|\d{6,}/);
+        if (m) { recs.push([m[0], '', '', '', '', '', '']); break; }
+      }
+    }
+  }
+  return recs;
+}
+
+/* ================= USB/蓝牙扫码枪（HID 键盘模式） =================
+   扫码枪即键盘：扫到码后瞬间输入字符流并以回车结尾。
+   全局监听按键，快速字符流（间隔 < 90ms）聚合后提交，无需页面焦点；
+   焦点在输入框内时不聚合（输入框各自处理回车），人工打字速度不会误触发。 */
+let gunBuf = '', gunTimer = null;
+function initScannerGun() {
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const tag = document.activeElement ? document.activeElement.tagName : '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;      // 输入框内交给各自逻辑
+    if (e.key === 'Enter') {
+      if (gunBuf.length >= 3) commitGun(gunBuf);
+      gunBuf = ''; clearTimeout(gunTimer);
+      return;
+    }
+    if (e.key && e.key.length === 1) {
+      gunBuf += e.key;
+      clearTimeout(gunTimer);
+      gunTimer = setTimeout(() => {
+        if (gunBuf.length >= 3) commitGun(gunBuf);          // 无回车后缀的扫码枪：静默超时提交
+        gunBuf = '';
+      }, 90);
+    }
+  }, true);
+}
+function commitGun(raw) {
+  const v = normCode(raw).toUpperCase();
+  if (!v) return;
+  handleCodeRaw(v, 'gun');
+}
+
+/* ================= 视图切换 / 事件绑定 ================= */
+function switchView(v) {
+  document.querySelectorAll('.view').forEach(s => s.classList.toggle('active', s.id === v));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.getAttribute('data-v') === v));
+  try { document.activeElement && document.activeElement.blur(); } catch (e) {}   // 切页清焦点，扫码枪随时可用
+}
+let toastTimer = null;
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+/* ================= 加密解锁（仅部署版启用） ================= */
+const b64d = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function decryptLib(pw, enc) {
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: b64d(enc.salt), iterations: enc.iter, hash: 'SHA-256' },
+    await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']),
+    { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64d(enc.iv) }, key, b64d(enc.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+function showLock() {
+  $('lockOverlay').style.display = 'flex';
+  $('pwStatus').textContent = '';
+  $('pwInput').value = '';
+  setTimeout(() => { try { $('pwInput').focus(); } catch (e) {} }, 80);
+}
+async function unlock() {
+  const pw = $('pwInput').value;
+  if (!pw) { $('pwStatus').textContent = '请输入密码'; return; }
+  if (!window.crypto || !crypto.subtle) { $('pwStatus').textContent = '当前环境不支持解密，请用 HTTPS 地址打开'; return; }
+  $('pwStatus').style.color = 'var(--dim)';
+  $('pwStatus').textContent = '正在解锁…';
+  try {
+    const rows = await decryptLib(pw, DEFAULT_LIB.enc);
+    const data = { name: DEFAULT_LIB.name, src: 'unlocked', time: '密码解锁', rows };
+    localStorage.setItem(LS_LIB, JSON.stringify(data));
+    applyLib(data, false);
+    $('lockOverlay').style.display = 'none';
+    try { document.activeElement && document.activeElement.blur(); } catch (e) {}   // 清焦点残留，避免扫码枪聚合被输入框挡住
+    toast('已解锁 · ' + lib.count + ' 条');
+  } catch (e) {
+    $('pwStatus').style.color = 'var(--bad)';
+    $('pwStatus').textContent = '密码不正确，请重试';
+    if (navigator.vibrate) { try { navigator.vibrate([160, 70, 160]); } catch (err) {} }
+  }
+}
+
+function bindEvents() {
+  document.querySelectorAll('.tab').forEach(t => t.onclick = () => switchView(t.getAttribute('data-v')));
+  $('btnStart').onclick = startCam;
+  $('btnTorch').onclick = toggleTorch;
+  $('btnAlbum').onclick = () => $('albumInput').click();
+  $('albumInput').onchange = e => { scanImageFile(e.target.files[0]); e.target.value = ''; };
+  $('btnManual').onclick = doManual;
+  $('manualInput').onkeydown = e => { if (e.key === 'Enter') doManual(); };
+  $('logSearch').oninput = renderLog;
+  $('todoSearch').oninput = renderTodo;
+  $('libSearch').oninput = renderLibList;
+  $('btnAddCode').onclick = addManualCode;
+  $('addInput').onkeydown = e => { if (e.key === 'Enter') addManualCode(); };
+  $('btnExportLog').onclick = exportLog;
+  $('btnExportTodo').onclick = exportTodo;
+  $('btnUnlock').onclick = unlock;
+  $('pwInput').onkeydown = e => { if (e.key === 'Enter') unlock(); };
+  $('bmClose').onclick = closeBoxModal;
+  $('bmOk').onclick = closeBoxModal;
+  $('boxModal').onclick = e => { if (e.target === $('boxModal')) closeBoxModal(); };
+  $('bmGrid').addEventListener('click', e => {
+    const cell = e.target.closest('[data-key]');
+    if (cell) flashPos(cell.getAttribute('data-key'));
+  });
+  $('bmList').addEventListener('click', e => {
+    const li = e.target.closest('[data-key]');
+    if (li) flashPos(li.getAttribute('data-key'));
+  });
+  $('btnClearLog').onclick = () => {
+    if (!logArr.length) { toast('记录已为空'); return; }
+    if (confirm('确定清空全部 ' + logArr.length + ' 条扫描记录吗？此操作不可恢复。')) {
+      logArr = []; logIndex.clear(); persistLog();
+      updateStats(); renderLog(); renderTodo();
+      toast('记录已清空');
+    }
+  };
+  $('btnImport').onclick = () => $('importInput').click();
+  $('importInput').onchange = e => { importFile(e.target.files[0]); e.target.value = ''; };
+  $('btnResetLib').onclick = () => {
+    const enc = DEFAULT_LIB && DEFAULT_LIB.enc;
+    const msg = enc ? '清除本机已解锁或导入的编码库并重新锁定吗？'
+      : '恢复为内置的默认编码库（' + DEFAULT_LIB.name + '）吗？';
+    if (!confirm(msg)) return;
+    localStorage.removeItem(LS_LIB);
+    if (enc) { applyLib({ name: DEFAULT_LIB.name || '', rows: [] }, true); showLock(); toast('已重新锁定'); }
+    else { applyLib(DEFAULT_LIB, true); toast('已恢复默认编码库'); }
+  };
+}
+
+function init() {
+  loadLog(); bindEvents(); updateStats(); renderLog(); renderTodo();
+  initScannerGun();
+  const enc = DEFAULT_LIB && DEFAULT_LIB.enc;
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(LS_LIB) || 'null'); } catch (e) {}
+  const savedOk = saved && Array.isArray(saved.rows) && saved.rows.length;
+  if (enc) {
+    if (savedOk) applyLib(saved, false);
+    else { applyLib({ name: (DEFAULT_LIB && DEFAULT_LIB.name) || '', rows: [] }, true); showLock(); }
+  } else {
+    if (savedOk) applyLib(saved, false);
+    else applyLib(DEFAULT_LIB, true);
+  }
+  if (!window.isSecureContext) {
+    $('httpsHint').textContent = '⚠ 当前页面不是 HTTPS，摄像头功能不可用。请在电脑端运行 serve_https.py，手机通过 https:// 地址访问后使用相机；手动输入与记录功能不受影响。';
+    setCamStatus('⚠ 非 HTTPS 环境，摄像头不可用；可先用手动输入或相册识别。', true);
+  }
+  /*__PWAREG__*/
+  window.__app = { handleCode, scanImageFile, lib, getLog: () => logArr };   // 供调试与自动化验证
+}
+function doManual() {
+  const inp = $('manualInput');
+  const v = normCode(inp.value);
+  if (!v) { toast('请输入条码号'); return; }
+  handleCodeRawForManual(v);
+  inp.value = ''; inp.blur();
+}
+function handleCodeRaw(v, src) {
+  // 直判路径（手动输入/扫码枪）：绕过摄像头冷却，按来源记录
+  const now = Date.now();
+  const rec = lib.map.get(v) || null;
+  const ok = !!rec;
+  let entry = logIndex.get(v);
+  const dup = !!entry;
+  if (entry) { entry.ok = ok ? 1 : 0; entry.ts = now; entry.hits = (entry.hits || 1) + 1; entry.src = src; }
+  else { entry = { c: v, ok: ok ? 1 : 0, ts: now, src, hits: 1 }; logArr.push(entry); logIndex.set(v, entry); }
+  persistLog();
+  feedback({ ok, dup });
+  if (src === 'manual') {
+    showResult($('manualResult'), { c: v, ok, rec, dup, ts: now });
+    if (ok && rec) { switchView('v-manual'); showBoxModal(rec); }
+  } else {
+    switchView('v-scan');
+    showResult($('scanResult'), { c: v, ok, rec, dup, ts: now });
+    if (ok && rec) showBoxModal(rec);
+  }
+  updateStats(); renderLog(); renderTodo();
+}
+function handleCodeRawForManual(v) { handleCodeRaw(v, 'manual'); }
+init();
+</script>
+</body>
+</html>

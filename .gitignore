@@ -1,0 +1,11 @@
+# 私有数据与本地产物 —— 切勿提交
+password*.txt
+*.xlsx
+!demo/demo.xlsx
+冻存条码核对.html
+deploy/
+certs/
+使用说明.md
+手机扫码访问*.png
+__pycache__/
+.DS_Store
