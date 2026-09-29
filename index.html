@@ -257,9 +257,16 @@ h2{font-size:17px;margin:2px 0 12px}
       <div id="libList" class="list"></div>
 
       <div style="height:18px"></div>
+      <div class="row" style="margin-bottom:8px">
+        <select id="codeModeSel" class="search" style="flex:1;min-height:46px">
+          <option value="auto">条码来源：自动（暂存空间列末尾编码，推荐）</option>
+          <option value="box-full">条码来源：暂存空间列整列作为编码</option>
+          <option value="tube">条码来源：「冻存条码号」列</option>
+        </select>
+      </div>
       <button id="btnImport" class="btn primary">上传新 Excel 更新编码库</button>
       <input type="file" id="importInput" accept=".xlsx,.xls,.csv,.txt" hidden>
-      <p class="hint">支持与本表相同格式的 xlsx：自动取「暂存空间」末尾 E 开头编码作为条码（如 …第33盒E7000001 → E7000001），并带出样本号与行列；无该列时退回「冻存条码号」列。也支持 csv / txt（每行一个条码，或逗号、Tab 分列）。首次导入需联网下载解析组件；导入后编码库保存在本机，扫码功能始终离线可用。</p>
+      <p class="hint">编码开头字母不限（取决于你的盒签规则），默认自动取「暂存空间」末尾的编码段，并带出样本号与行列；不合适时用上方选项切换来源后重新导入。也支持 csv / txt（每行一个条码，或逗号、Tab 分列）。首次导入需联网下载解析组件；导入后编码库保存在本机，扫码功能始终离线可用。</p>
       <button id="btnResetLib" class="btn">恢复默认编码库</button>
       <p class="hint warn" id="httpsHint"></p>
     </section>
@@ -304,7 +311,7 @@ h2{font-size:17px;margin:2px 0 12px}
 <script>
 'use strict';
 /* ================= 编码库数据（构建时注入） ================= */
-const DEFAULT_LIB = {"name":"演示编码库","src":"default","rows":[["E9000001","DEMO001","5000000001","2026年演示组第1盒E9000001",1,4,""],["E9000001","DEMO002","5000000002","2026年演示组第1盒E9000001",3,2,""],["E9000001","DEMO003","5000000003","2026年演示组第1盒E9000001",5,7,""],["E9000001","DEMO004","5000000004","2026年演示组第1盒E9000001",6,1,""],["E9000002","DEMO005","5000000005","2026年演示组第2盒E9000002",2,5,""],["E9000002","DEMO006","5000000006","2026年演示组第2盒E9000002",4,3,""],["E8900001","DEMO007","5000000007","2025年演示组第1盒E8900001",1,1,""],["E8900001","DEMO008","5000000008","2025年演示组第1盒E8900001",6,8,""]]};
+const DEFAULT_LIB = {"name":"演示编码库","src":"default","rows":[["E9000001","DEMO001","5000000001","2026年演示组第1盒E9000001","1","4",""],["E9000001","DEMO002","5000000002","2026年演示组第1盒E9000001","3","2",""],["E9000001","DEMO003","5000000003","2026年演示组第1盒E9000001","5","7",""],["E9000001","DEMO004","5000000004","2026年演示组第1盒E9000001","6","1",""],["E9000002","DEMO005","5000000005","2026年演示组第2盒E9000002","2","5",""],["E9000002","DEMO006","5000000006","2026年演示组第2盒E9000002","4","3",""],["E8900001","DEMO007","5000000007","2025年演示组第1盒E8900001","1","1",""],["E8900001","DEMO008","5000000008","2025年演示组第1盒E8900001","6","8",""]]};
 
 const LS_LIB = 'cb.lib.v4';
 const LS_LOG = 'cb.log.v4';
@@ -867,7 +874,9 @@ async function importFile(file) {
     const recs = parseRows(rows);
     if (!recs.length) throw new Error('未找到有效的条码数据');
     const uniq = new Set(recs.map(r => normCode(r[0]))).size;
-    if (!confirm('文件：' + file.name + '\n识别到 ' + recs.length + ' 行数据，唯一条码 ' + uniq + ' 条。\n确定用其替换当前编码库吗？（扫描记录会保留）')) return;
+    const sample = [...new Set(recs.map(r => normCode(r[0])))].slice(0, 4).join('、');
+    if (!confirm('文件：' + file.name + '\n识别到 ' + recs.length + ' 行数据，唯一条码 ' + uniq + ' 条。\n条码样例：' + sample +
+      '\n\n确定用其替换当前编码库吗？（扫描记录会保留；样例不对请取消并更换「条码来源」后重试）')) return;
     const name = file.name.replace(/\.(xlsx|xls|csv|txt)$/i, '');
     const data = { name, time: new Date().toLocaleString('zh-CN', { hour12: false }), rows: recs };
     localStorage.setItem(LS_LIB, JSON.stringify(data));
@@ -877,6 +886,9 @@ async function importFile(file) {
     console.error(e);
     alert('导入失败：' + (e.message || e));
   }
+}
+function getCodeMode() {
+  try { return localStorage.getItem('cb.codeMode') || 'auto'; } catch (e) { return 'auto'; }
 }
 function parseRows(rows) {
   // 在前 12 行里找包含“条码”的表头行，确定条码列及附属列
@@ -898,25 +910,29 @@ function parseRows(rows) {
   if (hIdx >= 0) {
     for (let i = hIdx + 1; i < rows.length; i++) {
       const row = rows[i] || [];
+      let t = normCode(cCol >= 0 ? row[cCol] : '');
       let c = '';
-      if (bCol >= 0) {                          // 优先：暂存空间末尾 E 开头编码
-        const mm = String(row[bCol] == null ? '' : row[bCol]).trim().match(/(E\d+)$/);
-        if (mm) c = mm[1];
-      }
-      let t = '';
-      if (cCol >= 0) {                          // 「冻存条码号」列：管条码，兼作主码退路
-        const tv = normCode(row[cCol]);
-        if (/^\d{5,}$/.test(tv)) { t = tv; if (!c) c = tv; }
+      const mode = getCodeMode();
+      if (mode === 'tube') {                    // 直接用「冻存条码号」列
+        c = t;
+      } else if (mode === 'box-full') {         // 「暂存空间」整列文本作为编码
+        c = normCode(bCol >= 0 ? row[bCol] : '');
+      } else {                                  // auto：暂存空间末尾编码段 → 退回条码号列
+        if (bCol >= 0) {
+          const mm = String(row[bCol] == null ? '' : row[bCol]).trim().match(/[A-Za-z0-9][A-Za-z0-9\-]{1,}$/);
+          if (mm) c = mm[0];
+        }
+        if (!c) c = t;
       }
       if (!c) continue;
       recs.push([c, sCol >= 0 ? row[sCol] : '', t, bCol >= 0 ? row[bCol] : '',
                  rCol >= 0 ? row[rCol] : '', kCol >= 0 ? row[kCol] : '', '']);
     }
   } else {
-    // 无表头：取每行里第一个 E 开头编码或 6 位以上纯数字串当条码
+    // 无表头：取每行里第一个形似编码的段（字母开头或 4 位以上数字）
     for (const row of rows) {
       for (const cell of (row || [])) {
-        const m = String(cell == null ? '' : cell).match(/E\d{4,}|\d{6,}/);
+        const m = String(cell == null ? '' : cell).match(/[A-Za-z][A-Za-z0-9\-]{3,}|\d{4,}/);
         if (m) { recs.push([m[0], '', '', '', '', '', '']); break; }
       }
     }
@@ -1043,6 +1059,12 @@ function bindEvents() {
     }
   };
   $('btnImport').onclick = () => $('importInput').click();
+  const cmSel = $('codeModeSel');
+  cmSel.value = getCodeMode();
+  cmSel.onchange = () => {
+    try { localStorage.setItem('cb.codeMode', cmSel.value); } catch (e) {}
+    toast('条码来源已切换，下次导入生效');
+  };
   $('importInput').onchange = e => { importFile(e.target.files[0]); e.target.value = ''; };
   $('btnResetLib').onclick = () => {
     const enc = DEFAULT_LIB && DEFAULT_LIB.enc;
