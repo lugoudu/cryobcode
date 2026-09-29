@@ -62,6 +62,9 @@ def load_rows(xlsx_path, code_col_kw='暂存空间', code_regex=None):
         whole_col = True
     else:
         whole_col = (code_regex == 'full')
+    if code_col < 0:
+        sys.exit('错误：表头中找不到含「%s」或「条码」的列，请用 --code-col 指定编码来源列。表头：%s'
+                 % (code_col_kw or '条码', ' | '.join(c for c in cols if c) or '（空）'))
     rx = None if whole_col else re.compile(code_regex or DEFAULT_CODE_RE)
 
     s_col, t_col, b_col = find_col(['样本', '编号', 'yangben']), find_col(['条码号', '冻存条码']), find_col(['暂存', '空间', '位置'])
@@ -102,16 +105,14 @@ def load_template():
     return tpl, lib_js
 
 
-def assemble(tpl, lib_js, data_js, pwa_head='', pwa_reg='', grid=None):
+def assemble(tpl, lib_js, data_js, pwa_head='', pwa_reg='', grid=(6, 8)):
     html = tpl
     assert html.count('/*__H5Q__*/') == 1 and html.count('/*__DATA__*/') == 1
     html = html.replace('/*__H5Q__*/', lib_js)
     html = html.replace('/*__DATA__*/', data_js)
     html = html.replace('<!--__PWAHEAD__-->', pwa_head)
     html = html.replace('/*__PWAREG__*/', pwa_reg)
-    if grid and grid != (6, 8):
-        html = html.replace('const R = 6, C = 8; /*__GRID__*/', 'const R = %d, C = %d;' % grid)
-    assert '/*__' not in html.split('</head>')[0] or True
+    html = html.replace('const R = 6, C = 8; /*__GRID__*/', 'const R = %d, C = %d;' % grid)
     return html
 
 
@@ -194,8 +195,6 @@ MANIFEST = {
         {'src': './icon-512.png', 'sizes': '512x512', 'type': 'image/png'},
     ],
 }
-
-SETUP_HTML = os.path.join(BASE, 'deploy', 'setup.html')   # 若已存在则复用
 
 
 def pwa_assets(build_id):
